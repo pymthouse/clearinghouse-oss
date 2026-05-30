@@ -1,0 +1,233 @@
+services:
+  apache-signer-dmz:
+    build:
+      context: ./apache
+    depends_on:
+      keycloak:
+        condition: service_started
+      clearinghouse-control-plane:
+        condition: service_healthy
+      remote-signer:
+        condition: service_started
+        required: false
+    ports:
+      - "127.0.0.1:${SIGNER_DMZ_HTTP_PORT:-8080}:8080"
+    environment:
+      SIGNER_OIDC_METADATA_URL: ${SIGNER_OIDC_METADATA_URL:-http://keycloak:8080/realms/clearinghouse/.well-known/openid-configuration}
+      # Must match JWT iss (public DMZ); JWKS fetched internally (see SIGNER_OIDC_JWKS_URL).
+      SIGNER_OIDC_ISSUER_URL: ${SIGNER_OIDC_ISSUER_URL:-https://localhost:8080/realms/clearinghouse}
+      SIGNER_OIDC_JWKS_URL: ${SIGNER_OIDC_JWKS_URL:-https://localhost:8080/realms/clearinghouse/protocol/openid-connect/certs}
+      SIGNER_OIDC_CLIENT_ID: ${SIGNER_OIDC_CLIENT_ID:-dashboard-signer-bootstrap}
+      SIGNER_OIDC_CLIENT_SECRET: ${SIGNER_OIDC_CLIENT_SECRET:-dashboard-signer-dev-secret}
+      SIGNER_OIDC_CRYPTO_PASSPHRASE: ${SIGNER_OIDC_CRYPTO_PASSPHRASE:-dev-change-me}
+    volumes:
+      # Self-signed dev TLS chain; generate with scripts/generate-dev-tls.sh.
+      - ./apache/certs:/etc/apache2/certs:ro
+    networks:
+      public:
+        aliases:
+          - clearinghouse.localhost
+      clearinghouse:
+        aliases:
+          - clearinghouse.localhost
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command:
+      - start-dev
+      - --import-realm
+      - --features=token-exchange
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-postgres:5432/${KEYCLOAK_POSTGRES_DB:-keycloak}
+      KC_DB_USERNAME: ${KEYCLOAK_POSTGRES_USER:-keycloak}
+      KC_DB_PASSWORD: ${KEYCLOAK_POSTGRES_PASSWORD:-keycloak_dev_password}
+      KC_HTTP_ENABLED: "true"
+      # Public URL is the TLS-terminating DMZ; Keycloak itself stays HTTP on the internal net.
+      KC_HOSTNAME: ${KC_PUBLIC_URL:-https://localhost:8080}
+      KC_HOSTNAME_STRICT: "false"
+      KC_PROXY_HEADERS: xforwarded
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+    expose:
+      - "8080"
+    volumes:
+      - ./keycloak/${CLEARINGHOUSE_REALM_IMPORT:-realm-clearinghouse.json}:/opt/keycloak/data/import/realm-clearinghouse.json:ro
+      - ./keycloak-spi/providers/clearinghouse-spi.jar:/opt/keycloak/providers/clearinghouse-spi.jar:ro
+    depends_on:
+      - keycloak-postgres
+    networks:
+      - clearinghouse
+
+  keycloak-postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${KEYCLOAK_POSTGRES_DB:-keycloak}
+      POSTGRES_USER: ${KEYCLOAK_POSTGRES_USER:-keycloak}
+      POSTGRES_PASSWORD: ${KEYCLOAK_POSTGRES_PASSWORD:-keycloak_dev_password}
+    expose:
+      - "5432"
+    volumes:
+      - keycloak-postgres-data:/var/lib/postgresql/data
+    networks:
+      - clearinghouse
+
+  # Build the image once from go-livepeer (see scripts/build-remote-signer.sh).
+  # Do not use Dockerfile.remote-signer — it lacks CGO/FFmpeg and the wrong Go version.
+  remote-signer:
+    image: ${REMOTE_SIGNER_IMAGE:-go-livepeer-remote-signer:local}
+    profiles: ["hot-path"]
+    expose:
+      - "8935"
+    volumes:
+      # Same keystore / lpdb as pymthouse signer-dmz (see pymthouse/docker-compose.yml).
+      - ${SIGNER_DATA_DIR:-../pymthouse/data}:/data
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_TOPIC: ${SIGNER_KAFKA_TOPIC:-create_signed_ticket}
+      SIGNER_NETWORK: ${SIGNER_NETWORK:-arbitrum-one-mainnet}
+      ETH_RPC_URL: ${ETH_RPC_URL:-${LIVEPEER_ETH_URL:-http://nyc-router.eliteencoder.net:3517}}
+      SIGNER_ETH_ADDR: ${SIGNER_ETH_ADDR:-}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        if [ ! -f /data/.eth-password ]; then
+          echo "" >/data/.eth-password
+        fi
+        # :8935 alone becomes 127.0.0.1:8935 (unreachable from Apache); bind all interfaces.
+        ARGS="-remoteSigner -network=$${SIGNER_NETWORK} -httpAddr=0.0.0.0:8935 -cliAddr=127.0.0.1:4935"
+        ARGS="$$ARGS -ethUrl=$${ETH_RPC_URL} -ethPassword=/data/.eth-password -datadir=/data"
+        ARGS="$$ARGS -remoteSignerUsageIdentityMode=trusted_headers -v=99"
+        if [ -n "$${SIGNER_ETH_ADDR:-}" ]; then
+          ARGS="$$ARGS -ethAcctAddr=$${SIGNER_ETH_ADDR}"
+        fi
+        exec /usr/local/bin/livepeer $$ARGS
+    depends_on:
+      kafka:
+        condition: service_started
+    networks:
+      clearinghouse:
+      public:
+
+  kafka:
+    image: redpandadata/redpanda:v24.3.6
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp
+      - "1"
+      - --memory
+      - 512M
+      - --reserve-memory
+      - 0M
+      - --node-id
+      - "0"
+      - --check=false
+      - --kafka-addr
+      - internal://0.0.0.0:9092
+      - --advertise-kafka-addr
+      - internal://kafka:9092
+    expose:
+      - "9092"
+    volumes:
+      - kafka-data:/var/lib/redpanda/data
+    networks:
+      - clearinghouse
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${SIGNER_POSTGRES_DB:-signer}
+      POSTGRES_USER: ${SIGNER_POSTGRES_USER:-signer}
+      POSTGRES_PASSWORD: ${SIGNER_POSTGRES_PASSWORD:-signer_dev_password}
+    expose:
+      - "5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${SIGNER_POSTGRES_USER:-signer} -d ${SIGNER_POSTGRES_DB:-signer}",
+        ]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 5s
+    networks:
+      - clearinghouse
+
+  clearinghouse-control-plane:
+    build:
+      context: ..
+      dockerfile: lpclearinghouse/Dockerfile.control-plane
+    command: pnpm serve
+    environment:
+      CLEARINGHOUSE_DATABASE_URL: postgres://${SIGNER_POSTGRES_USER:-signer}:${SIGNER_POSTGRES_PASSWORD:-signer_dev_password}@postgres:5432/${SIGNER_POSTGRES_DB:-signer}
+      CLEARINGHOUSE_LISTEN_HOST: 0.0.0.0
+      CLEARINGHOUSE_LISTEN_PORT: 8090
+      CLEARINGHOUSE_OIDC_ISSUER_URL: ${CLEARINGHOUSE_OIDC_ISSUER_URL:-https://localhost:8080/realms/clearinghouse}
+      # Discovery/JWKS/token HTTP from inside the container (public issuer URL unchanged in JWTs).
+      CLEARINGHOUSE_OIDC_INTERNAL_BASE_URL: ${CLEARINGHOUSE_OIDC_INTERNAL_BASE_URL:-http://keycloak:8080}
+      CLEARINGHOUSE_OIDC_AUDIENCE: ${CLEARINGHOUSE_OIDC_AUDIENCE:-livepeer-remote-signer}
+      CLEARINGHOUSE_ALLOW_INSECURE_OIDC: ${CLEARINGHOUSE_ALLOW_INSECURE_OIDC:-true}
+      CLEARINGHOUSE_ADMIN_CLIENT_ID: ${CLEARINGHOUSE_ADMIN_CLIENT_ID:-clearinghouse-admin}
+      CLEARINGHOUSE_ADMIN_CLIENT_SECRET: ${CLEARINGHOUSE_ADMIN_CLIENT_SECRET:-clearinghouse-admin-dev-secret}
+      CLEARINGHOUSE_REQUIRE_POSITIVE_BALANCE: ${CLEARINGHOUSE_REQUIRE_POSITIVE_BALANCE:-false}
+      CLEARINGHOUSE_KEYCLOAK_ADMIN_URL: http://keycloak:8080
+      CLEARINGHOUSE_KEYCLOAK_REALM: clearinghouse
+      CLEARINGHOUSE_SEED_DASHBOARD_APP: ${CLEARINGHOUSE_SEED_DASHBOARD_APP:-true}
+      CLEARINGHOUSE_CREDENTIAL_ENCRYPTION_KEY: ${CLEARINGHOUSE_CREDENTIAL_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+    expose:
+      - "8090"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8090/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
+    networks:
+      - clearinghouse
+
+  clearinghouse-usage-worker:
+    build:
+      context: ..
+      dockerfile: lpclearinghouse/Dockerfile.control-plane
+    command: pnpm worker
+    environment:
+      CLEARINGHOUSE_DATABASE_URL: postgres://${SIGNER_POSTGRES_USER:-signer}:${SIGNER_POSTGRES_PASSWORD:-signer_dev_password}@postgres:5432/${SIGNER_POSTGRES_DB:-signer}
+      CLEARINGHOUSE_KAFKA_BROKERS: kafka:9092
+      CLEARINGHOUSE_KAFKA_TOPIC: ${SIGNER_KAFKA_TOPIC:-create_signed_ticket}
+      CLEARINGHOUSE_ADMIN_CLIENT_SECRET: ${CLEARINGHOUSE_ADMIN_CLIENT_SECRET:-clearinghouse-admin-dev-secret}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+    networks:
+      - clearinghouse
+
+networks:
+  public:
+  clearinghouse:
+    internal: true
+
+volumes:
+  kafka-data:
+  postgres-data:
+  keycloak-postgres-data:

@@ -1,0 +1,22 @@
+{
+  "name": "@livepeer/clearinghouse-control-plane",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "serve": "tsx src/index.ts",
+    "worker": "tsx src/worker.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test src/*.test.ts"
+  },
+  "dependencies": {
+    "@pymthouse/builder-sdk": "file:../../builder-sdk",
+    "kafkajs": "^2.2.4",
+    "postgres": "^3.4.9"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.22.3",
+    "typescript": "^5.7.2"
+  },
+  "packageManager": "pnpm@10.33.0"
+}
