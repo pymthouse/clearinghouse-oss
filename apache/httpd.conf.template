@@ -1,0 +1,77 @@
+ProxyRequests Off
+ProxyPreserveHost On
+
+# Strip client-supplied identity; DMZ sets trusted headers after bearer validation.
+RequestHeader unset X-Livepeer-Usage-Issuer
+RequestHeader unset X-Livepeer-Client-ID
+RequestHeader unset X-Livepeer-Usage-Subject
+RequestHeader unset X-Livepeer-Usage-Subject-Type
+
+<VirtualHost *:8080>
+  ErrorLog /proc/self/fd/2
+  CustomLog /proc/self/fd/1 combined
+
+  # TLS termination at the DMZ (self-signed dev chain; see signer/scripts/generate-dev-tls.sh).
+  SSLEngine on
+  SSLCertificateFile /etc/apache2/certs/server.crt
+  SSLCertificateKeyFile /etc/apache2/certs/server.key
+
+  # Tell upstreams (Keycloak with KC_PROXY_HEADERS=xforwarded) the original scheme so they
+  # generate https issuer/redirect URLs. mod_proxy does not set this header automatically.
+  RequestHeader set X-Forwarded-Proto "https"
+  RequestHeader set X-Forwarded-Port "8080"
+
+  # Discovery metadata (internal Keycloak). Issuer + JWKS are set explicitly so bearer
+  # validation matches JWT iss (public DMZ URL) while fetching keys over the Docker network.
+  OIDCProviderMetadataURL ${SIGNER_OIDC_METADATA_URL}
+  OIDCProviderIssuer ${SIGNER_OIDC_ISSUER_URL}
+  # Bearer JWT verification: JWKS URL must be https (mod_auth_openidc). Default loops back
+  # through this vhost (/realms/* → Keycloak). Dev DMZ uses a self-signed cert.
+  OIDCOAuthVerifyJwksUri ${SIGNER_OIDC_JWKS_URL}
+  OIDCOAuthSSLValidateServer Off
+  # Keycloak app tokens expose usage_subject (signer-claims), not always sub.
+  OIDCOAuthRemoteUserClaim usage_subject
+  OIDCClientID ${SIGNER_OIDC_CLIENT_ID}
+  OIDCClientSecret ${SIGNER_OIDC_CLIENT_SECRET}
+  OIDCCryptoPassphrase ${SIGNER_OIDC_CRYPTO_PASSPHRASE}
+  OIDCRedirectURI https://localhost:8080/oauth2/callback
+  OIDCCacheDir /var/cache/apache2/mod_auth_openidc
+  OIDCScope "openid"
+
+  # Keycloak issuer, device flow, account UI, and static login resources.
+  <Location /realms/>
+    ProxyPass http://keycloak:8080/realms/
+    ProxyPassReverse http://keycloak:8080/realms/
+  </Location>
+
+  <Location /resources/>
+    ProxyPass http://keycloak:8080/resources/
+    ProxyPassReverse http://keycloak:8080/resources/
+  </Location>
+
+  # Clearinghouse control plane (bootstrap, admin, app M2M).
+  <Location /api/clearinghouse/>
+    ProxyPass http://clearinghouse-control-plane:8090/api/clearinghouse/
+    ProxyPassReverse http://clearinghouse-control-plane:8090/api/clearinghouse/
+  </Location>
+
+  # Legacy signer API paths (same control plane).
+  <Location /api/signer/>
+    ProxyPass http://clearinghouse-control-plane:8090/api/signer/
+    ProxyPassReverse http://clearinghouse-control-plane:8090/api/signer/
+  </Location>
+
+  # Remote signer hot path: proxy at vhost scope (ProxyPass inside LocationMatch does
+  # not reliably reach the upstream with mod_auth_openidc; see pymthouse signer-dmz).
+  ProxyPassMatch ^/(generate-live-payment|sign-orchestrator-info|sign-byoc-job|discover-orchestrators)$ http://remote-signer:8935$0
+  ProxyPassReverse / http://remote-signer:8935/
+
+  <LocationMatch "^/(generate-live-payment|sign-orchestrator-info|sign-byoc-job|discover-orchestrators)$">
+    AuthType oauth20
+    Require valid-user
+    RequestHeader set X-Livepeer-Usage-Issuer "expr=%{env:OIDC_CLAIM_iss}"
+    RequestHeader set X-Livepeer-Client-ID "expr=%{env:OIDC_CLAIM_client_id}"
+    RequestHeader set X-Livepeer-Usage-Subject "expr=%{env:OIDC_CLAIM_usage_subject}"
+    RequestHeader set X-Livepeer-Usage-Subject-Type "expr=%{env:OIDC_CLAIM_usage_subject_type}"
+  </LocationMatch>
+</VirtualHost>

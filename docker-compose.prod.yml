@@ -1,0 +1,22 @@
+# Production-oriented overrides. Use:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+services:
+  keycloak:
+    command:
+      - start
+      - --import-realm
+      - --features=token-exchange
+    environment:
+      KC_HOSTNAME_STRICT: "true"
+    volumes:
+      - ./keycloak/realm-clearinghouse.base.json:/opt/keycloak/data/import/realm-clearinghouse.json:ro
+
+  clearinghouse-control-plane:
+    environment:
+      CLEARINGHOUSE_ALLOW_INSECURE_OIDC: "false"
+      CLEARINGHOUSE_REQUIRE_POSITIVE_BALANCE: "true"
+      CLEARINGHOUSE_SEED_DASHBOARD_APP: "false"
+
+  clearinghouse-usage-worker:
+    environment:
+      CLEARINGHOUSE_REQUIRE_POSITIVE_BALANCE: "true"

@@ -1,0 +1,2 @@
+com.livepeer.clearinghouse.keycloak.SignerAudienceTokenExchangeProviderFactory
+com.livepeer.clearinghouse.keycloak.DeviceApprovalTokenExchangeProviderFactory

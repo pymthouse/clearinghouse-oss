@@ -1,0 +1,5 @@
+.env
+control-plane/node_modules/
+keycloak-spi/target/
+keycloak-spi/providers/*.jar
+!keycloak-spi/providers/.gitkeep

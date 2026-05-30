@@ -1,0 +1,10 @@
+# DEPRECATED — do not use this file for Compose builds.
+#
+# go-livepeer requires Go 1.25+ and a full CGO/FFmpeg toolchain. Use the official
+# image build instead:
+#
+#   bash signer/scripts/build-remote-signer.sh
+#
+# Or from the go-livepeer repo:
+#
+#   docker build -f docker/Dockerfile -t go-livepeer-remote-signer:local .
