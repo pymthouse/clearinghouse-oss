@@ -19,22 +19,46 @@ function json(body: unknown, status = 200): Response {
   return Response.json(body, { status });
 }
 
+// Response bodies for client-facing errors are built exclusively from this
+// literal map so no message, code, or other data from a thrown error object can
+// ever leak to the client (information exposure / reflected input).
+const PUBLIC_ERRORS: Record<string, string> = {
+  unauthorized: "Unauthorized",
+  invalid_token: "Invalid or missing credentials",
+  invalid_client: "Unknown application client",
+  app_disabled: "Application is disabled",
+  forbidden: "Access denied",
+  invalid_request: "Invalid request",
+  invalid_scope: "Scope not allowed for application",
+  identity_mismatch: "Identity does not match authenticated application",
+  insufficient_balance: "Insufficient signer credit balance",
+  not_found: "Not found",
+  server_error: "Internal server error",
+};
+
 function errorResponse(error: unknown): Response {
-  if (error instanceof ClearinghouseAuthError) {
-    return json({ error: error.message, code: error.code }, error.status);
+  const isApiError =
+    error instanceof ClearinghouseAuthError ||
+    error instanceof AppUserError ||
+    (error instanceof Error &&
+      "code" in error &&
+      "status" in error &&
+      typeof (error as { status?: unknown }).status === "number");
+
+  if (isApiError) {
+    const err = error as Error & { code?: string; status: number };
+    const status = err.status >= 400 && err.status < 600 ? err.status : 500;
+    for (const [code, message] of Object.entries(PUBLIC_ERRORS)) {
+      if (code === err.code) {
+        return json({ error: message, code }, status);
+      }
+    }
+    return json({ error: "Request failed", code: "error" }, status);
   }
-  if (error instanceof AppUserError) {
-    return json({ error: error.message, code: error.code }, error.status);
-  }
-  if (error instanceof Error && "code" in error) {
-    const err = error as Error & { code?: string; status?: number };
-    return json(
-      { error: err.message, code: err.code ?? "error" },
-      typeof err.status === "number" ? err.status : 400,
-    );
-  }
-  const message = error instanceof Error ? error.message : "Unexpected error";
-  return json({ error: message }, 500);
+
+  // Never echo unexpected error details to the client (information exposure).
+  console.error("[clearinghouse] unhandled error", error);
+  return json({ error: "Internal server error" }, 500);
 }
 
 function keycloakOptions(config: ClearinghouseConfig) {

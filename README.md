@@ -46,7 +46,8 @@ bash scripts/generate-dev-tls.sh
 
 ```bash
 cp .env.example .env   # edit ETH_RPC_URL, SIGNER_DATA_DIR as needed
-export CLEARINGHOUSE_ADMIN_CLIENT_SECRET=<redacted-admin-secret>
+# Root admin API credential (no default); persist it in .env if you prefer.
+export CLEARINGHOUSE_ADMIN_CLIENT_SECRET="$(openssl rand -base64 32)"
 docker compose up --build -d
 ```
 
@@ -81,7 +82,7 @@ docker logs lpclearinghouse-remote-signer-1 2>&1 | tail -5
 cd control-plane
 pnpm install
 export CLEARINGHOUSE_DATABASE_URL=postgres://signer:signer_dev_password@127.0.0.1:5432/signer
-export CLEARINGHOUSE_ADMIN_CLIENT_SECRET=<redacted-admin-secret>
+export CLEARINGHOUSE_ADMIN_CLIENT_SECRET="$(openssl rand -base64 32)"
 pnpm serve
 ```
 

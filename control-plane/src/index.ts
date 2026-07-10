@@ -27,6 +27,8 @@ async function main(): Promise<void> {
   await ensureClearinghouseSchema(sql);
   await ensureAdminConfig(sql, config);
 
+  // Plain HTTP by design: this service is only reachable on the compose network
+  // marked `internal: true`; TLS terminates at the Apache DMZ (see .snyk).
   const server = createServer((req, res) => {
     const host = req.headers.host ?? `localhost:${config.listenPort}`;
     const url = `http://${host}${req.url ?? "/"}`;
@@ -54,6 +56,10 @@ async function main(): Promise<void> {
         const response = await handleClearinghouseRequest(sql, config, request);
         res.statusCode = response.status;
         response.headers.forEach((value, key) => res.setHeader(key, value));
+        // Pure JSON API: pin the content type and disable sniffing so reflected
+        // request data can never be interpreted as HTML by a browser.
+        res.setHeader("content-type", "application/json; charset=utf-8");
+        res.setHeader("x-content-type-options", "nosniff");
         const responseBody = Buffer.from(await response.arrayBuffer());
         res.end(responseBody);
       } catch (error) {

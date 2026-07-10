@@ -26,6 +26,25 @@ function createSignerCore(sql: Sql, config: ClearinghouseConfig) {
   return { accountingStore, identityResolver, oidcFetch };
 }
 
+// Client-facing error codes are whitelisted through this literal list so no
+// data from a thrown error object can leak to the client.
+const PUBLIC_ERROR_CODES = [
+  "invalid_token",
+  "invalid_client",
+  "invalid_scope",
+  "app_disabled",
+  "identity_mismatch",
+  "insufficient_balance",
+  "forbidden",
+] as const;
+
+function publicErrorCode(code: unknown): string {
+  for (const known of PUBLIC_ERROR_CODES) {
+    if (known === code) return known;
+  }
+  return "error";
+}
+
 export function createClearinghouseBalanceHandler(
   sql: Sql,
   config: ClearinghouseConfig,
@@ -46,13 +65,17 @@ export function createClearinghouseBalanceHandler(
       return Response.json({ balance });
     } catch (error) {
       if (error instanceof PmtHouseError) {
+        // Expose only a whitelisted error code, never the raw message (it can
+        // include upstream OIDC/token details).
+        const status = error.status >= 400 && error.status < 600 ? error.status : 500;
         return Response.json(
-          { error: error.message, code: error.code },
-          { status: error.status },
+          { error: "Request failed", code: publicErrorCode(error.code) },
+          { status },
         );
       }
-      const message = error instanceof Error ? error.message : "Unexpected error";
-      return Response.json({ error: message }, { status: 500 });
+      // Never echo unexpected error details to the client (information exposure).
+      console.error("[clearinghouse] balance handler failed", error);
+      return Response.json({ error: "Internal server error" }, { status: 500 });
     }
   };
 }
@@ -111,7 +134,8 @@ export function createClearinghouseSignerHandlers(
       const requested = (input.scope ?? config.defaultScope).split(/\s+/);
       for (const scope of requested) {
         if (scope && !scopes.includes(scope)) {
-          throw new PmtHouseError(`Scope not allowed for application: ${scope}`, {
+          // Do not reflect the requested scope back to the client.
+          throw new PmtHouseError("Scope not allowed for application", {
             status: 403,
             code: "invalid_scope",
           });

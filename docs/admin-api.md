@@ -9,7 +9,7 @@ This document covers **administrator-only** routes under `/api/clearinghouse/adm
 1. **Stack running** — see [README.md](../README.md):
 
    ```bash
-   export CLEARINGHOUSE_ADMIN_CLIENT_SECRET=<redacted-admin-secret>
+   export CLEARINGHOUSE_ADMIN_CLIENT_SECRET="$(openssl rand -base64 32)"
    docker compose up --build -d
    ```
 
@@ -25,7 +25,7 @@ This document covers **administrator-only** routes under `/api/clearinghouse/adm
    | Variable | Default (dev) |
    |----------|----------------|
    | `CLEARINGHOUSE_ADMIN_CLIENT_ID` | `clearinghouse-admin` |
-   | `CLEARINGHOUSE_ADMIN_CLIENT_SECRET` | *(required; dev compose uses `<redacted-admin-secret>`)* |
+   | `CLEARINGHOUSE_ADMIN_CLIENT_SECRET` | *(required; no default — export a strong random value before `docker compose up`)* |
 
    The secret is hashed in Postgres on startup. Changing it requires updating the env var and restarting the control plane so `ensureAdminConfig` can refresh the stored hash.
 
@@ -37,10 +37,10 @@ This document covers **administrator-only** routes under `/api/clearinghouse/adm
 | Admin path prefix | `/api/clearinghouse/admin` |
 | Auth | HTTP **Basic** — username = admin client ID, password = admin client secret |
 
-Example header (equivalent to `-u clearinghouse-admin:${CLEARINGHOUSE_ADMIN_CLIENT_SECRET}`):
+Example header (equivalent to `-u clearinghouse-admin:$CLEARINGHOUSE_ADMIN_CLIENT_SECRET`):
 
 ```http
-Authorization: Basic base64(clearinghouse-admin:${CLEARINGHOUSE_ADMIN_CLIENT_SECRET})
+Authorization: Basic base64(clearinghouse-admin:<your-admin-secret>)
 ```
 
 All admin routes reject requests without valid Basic auth:

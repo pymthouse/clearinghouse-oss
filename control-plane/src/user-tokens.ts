@@ -20,11 +20,8 @@ function parseScopes(allowedScopes: string): Set<string> {
 function validateRequestedScopes(requested: string[], allowed: Set<string>): void {
   for (const scope of requested) {
     if (!allowed.has(scope)) {
-      throw new AppUserError(
-        `Scope not allowed for application: ${scope}`,
-        403,
-        "invalid_scope",
-      );
+      // Do not reflect the requested scope back to the client.
+      throw new AppUserError("Scope not allowed for application", 403, "invalid_scope");
     }
   }
 }
@@ -104,11 +101,13 @@ export async function mintUserAccessToken(
   };
 
   if (!response.ok || !payload.access_token) {
-    throw new AppUserError(
-      payload.error_description || payload.error || "token mint failed",
-      502,
-      "server_error",
+    // Log the upstream OIDC error but return a constant message to the client.
+    console.error(
+      "[clearinghouse] token mint failed",
+      payload.error,
+      payload.error_description,
     );
+    throw new AppUserError("token mint failed", 502, "server_error");
   }
 
   return {

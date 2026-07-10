@@ -1,0 +1,11 @@
+# Snyk (https://snyk.io) policy file
+version: v1.5.0
+ignore:
+  'javascript/HttpToHttps':
+    - '*':
+        reason: >
+          The control plane intentionally serves plain HTTP on the compose
+          network marked `internal: true`; TLS terminates at the Apache DMZ
+          (apache-signer-dmz), which is the only service publishing a port.
+        expires: 2027-07-10T00:00:00.000Z
+        created: 2026-07-10T00:00:00.000Z

@@ -176,7 +176,8 @@ services:
       CLEARINGHOUSE_OIDC_AUDIENCE: ${CLEARINGHOUSE_OIDC_AUDIENCE:-livepeer-remote-signer}
       CLEARINGHOUSE_ALLOW_INSECURE_OIDC: ${CLEARINGHOUSE_ALLOW_INSECURE_OIDC:-true}
       CLEARINGHOUSE_ADMIN_CLIENT_ID: ${CLEARINGHOUSE_ADMIN_CLIENT_ID:-clearinghouse-admin}
-      CLEARINGHOUSE_ADMIN_CLIENT_SECRET: ${CLEARINGHOUSE_ADMIN_CLIENT_SECRET:-<redacted-admin-secret>}
+      # Root admin API credential reachable through the DMZ: no dev default on purpose.
+      CLEARINGHOUSE_ADMIN_CLIENT_SECRET: ${CLEARINGHOUSE_ADMIN_CLIENT_SECRET:?set in .env or export (openssl rand -base64 32)}
       CLEARINGHOUSE_REQUIRE_POSITIVE_BALANCE: ${CLEARINGHOUSE_REQUIRE_POSITIVE_BALANCE:-false}
       CLEARINGHOUSE_KEYCLOAK_ADMIN_URL: http://keycloak:8080
       CLEARINGHOUSE_KEYCLOAK_REALM: clearinghouse
@@ -217,7 +218,7 @@ services:
       CLEARINGHOUSE_DATABASE_URL: postgres://${SIGNER_POSTGRES_USER:-signer}:${SIGNER_POSTGRES_PASSWORD:-signer_dev_password}@postgres:5432/${SIGNER_POSTGRES_DB:-signer}
       CLEARINGHOUSE_KAFKA_BROKERS: kafka:9092
       CLEARINGHOUSE_KAFKA_TOPIC: ${SIGNER_KAFKA_TOPIC:-create_signed_ticket}
-      CLEARINGHOUSE_ADMIN_CLIENT_SECRET: ${CLEARINGHOUSE_ADMIN_CLIENT_SECRET:-<redacted-admin-secret>}
+      CLEARINGHOUSE_ADMIN_CLIENT_SECRET: ${CLEARINGHOUSE_ADMIN_CLIENT_SECRET:?set in .env or export (openssl rand -base64 32)}
     depends_on:
       postgres:
         condition: service_healthy
