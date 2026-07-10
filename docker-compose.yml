@@ -34,7 +34,9 @@ services:
           - clearinghouse.localhost
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.0
+    # Track the latest 26.x patch release; older images carry known auth-bypass CVEs
+    # (e.g. CVE-2026-9798). Matches keycloak-spi/pom.xml keycloak.version.
+    image: quay.io/keycloak/keycloak:26.6
     command:
       - start-dev
       - --import-realm

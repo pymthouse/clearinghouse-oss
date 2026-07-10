@@ -7,6 +7,8 @@ COMPOSE_FILE="${ROOT}/docker-compose.yml"
 export SIGNER_OIDC_METADATA_URL="${SIGNER_OIDC_METADATA_URL:-http://keycloak:8080/realms/clearinghouse/.well-known/openid-configuration}"
 export SIGNER_OIDC_CLIENT_ID="${SIGNER_OIDC_CLIENT_ID:-dashboard-signer-bootstrap}"
 export SIGNER_OIDC_CLIENT_SECRET="${SIGNER_OIDC_CLIENT_SECRET:-dashboard-signer-dev-secret}"
+# Required by docker-compose.yml (no default); a throwaway value is fine for config rendering.
+export CLEARINGHOUSE_ADMIN_CLIENT_SECRET="${CLEARINGHOUSE_ADMIN_CLIENT_SECRET:-$(openssl rand -hex 16)}"
 
 docker compose -f "${COMPOSE_FILE}" config >/dev/null
 docker compose -f "${COMPOSE_FILE}" config | grep -q "quay.io/keycloak/keycloak"
