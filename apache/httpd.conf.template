@@ -28,7 +28,8 @@ RequestHeader unset X-Livepeer-Usage-Subject-Type
   # Bearer JWT verification: JWKS URL must be https (mod_auth_openidc). Default loops back
   # through this vhost (/realms/* → Keycloak). Dev DMZ uses a self-signed cert.
   OIDCOAuthVerifyJwksUri ${SIGNER_OIDC_JWKS_URL}
-  OIDCOAuthSSLValidateServer Off
+  # Off only for the self-signed dev chain; docker-compose.prod.yml sets On.
+  OIDCOAuthSSLValidateServer ${SIGNER_OIDC_SSL_VALIDATE}
   # Keycloak app tokens expose usage_subject (signer-claims), not always sub.
   OIDCOAuthRemoteUserClaim usage_subject
   OIDCClientID ${SIGNER_OIDC_CLIENT_ID}

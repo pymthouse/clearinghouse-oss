@@ -20,6 +20,8 @@ services:
       SIGNER_OIDC_CLIENT_ID: ${SIGNER_OIDC_CLIENT_ID:-dashboard-signer-bootstrap}
       SIGNER_OIDC_CLIENT_SECRET: ${SIGNER_OIDC_CLIENT_SECRET:-dashboard-signer-dev-secret}
       SIGNER_OIDC_CRYPTO_PASSPHRASE: ${SIGNER_OIDC_CRYPTO_PASSPHRASE:-dev-change-me}
+      # Off tolerates the self-signed dev JWKS chain; docker-compose.prod.yml sets On.
+      SIGNER_OIDC_SSL_VALIDATE: ${SIGNER_OIDC_SSL_VALIDATE:-Off}
     volumes:
       # Self-signed dev TLS chain; generate with scripts/generate-dev-tls.sh.
       - ./apache/certs:/etc/apache2/certs:ro
@@ -179,7 +181,9 @@ services:
       CLEARINGHOUSE_KEYCLOAK_ADMIN_URL: http://keycloak:8080
       CLEARINGHOUSE_KEYCLOAK_REALM: clearinghouse
       CLEARINGHOUSE_SEED_DASHBOARD_APP: ${CLEARINGHOUSE_SEED_DASHBOARD_APP:-true}
-      CLEARINGHOUSE_CREDENTIAL_ENCRYPTION_KEY: ${CLEARINGHOUSE_CREDENTIAL_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      # No default on purpose: generate with `openssl rand -hex 32`. Programmatic user
+      # token mint fails with a clear error until this is set (see credential-crypto.ts).
+      CLEARINGHOUSE_CREDENTIAL_ENCRYPTION_KEY: ${CLEARINGHOUSE_CREDENTIAL_ENCRYPTION_KEY:-}
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
     expose:

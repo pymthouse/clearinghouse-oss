@@ -28,7 +28,7 @@
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,
-      "secret": "dashboard-signer-dev-secret",
+      "secret": "${SIGNER_OIDC_CLIENT_SECRET:dashboard-signer-dev-secret}",
       "standardFlowEnabled": false,
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,

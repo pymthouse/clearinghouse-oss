@@ -1,6 +1,16 @@
 # Production-oriented overrides. Use:
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# All `${VAR:?...}` variables MUST be set explicitly (compose refuses to start
+# otherwise) so the dev defaults from docker-compose.yml never reach production.
 services:
+  apache-signer-dmz:
+    environment:
+      SIGNER_OIDC_CLIENT_SECRET: ${SIGNER_OIDC_CLIENT_SECRET:?set a strong OIDC RP client secret}
+      SIGNER_OIDC_CRYPTO_PASSPHRASE: ${SIGNER_OIDC_CRYPTO_PASSPHRASE:?set a strong mod_auth_openidc crypto passphrase}
+      # Validate the JWKS TLS chain (dev default is Off for the self-signed cert).
+      SIGNER_OIDC_SSL_VALIDATE: ${SIGNER_OIDC_SSL_VALIDATE:-On}
+
   keycloak:
     command:
       - start
@@ -8,15 +18,33 @@ services:
       - --features=token-exchange
     environment:
       KC_HOSTNAME_STRICT: "true"
+      KC_DB_PASSWORD: ${KEYCLOAK_POSTGRES_PASSWORD:?set a strong Keycloak DB password}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set a strong Keycloak admin password}
+      # Substituted into realm-clearinghouse.base.json at import (dashboard-signer-bootstrap client).
+      SIGNER_OIDC_CLIENT_SECRET: ${SIGNER_OIDC_CLIENT_SECRET:?set a strong OIDC RP client secret}
     volumes:
       - ./keycloak/realm-clearinghouse.base.json:/opt/keycloak/data/import/realm-clearinghouse.json:ro
+
+  keycloak-postgres:
+    environment:
+      POSTGRES_PASSWORD: ${KEYCLOAK_POSTGRES_PASSWORD:?set a strong Keycloak DB password}
+
+  postgres:
+    environment:
+      POSTGRES_PASSWORD: ${SIGNER_POSTGRES_PASSWORD:?set a strong signer DB password}
 
   clearinghouse-control-plane:
     environment:
       CLEARINGHOUSE_ALLOW_INSECURE_OIDC: "false"
       CLEARINGHOUSE_REQUIRE_POSITIVE_BALANCE: "true"
       CLEARINGHOUSE_SEED_DASHBOARD_APP: "false"
+      CLEARINGHOUSE_DATABASE_URL: postgres://${SIGNER_POSTGRES_USER:-signer}:${SIGNER_POSTGRES_PASSWORD:?set a strong signer DB password}@postgres:5432/${SIGNER_POSTGRES_DB:-signer}
+      CLEARINGHOUSE_ADMIN_CLIENT_SECRET: ${CLEARINGHOUSE_ADMIN_CLIENT_SECRET:?set a strong admin client secret}
+      CLEARINGHOUSE_CREDENTIAL_ENCRYPTION_KEY: ${CLEARINGHOUSE_CREDENTIAL_ENCRYPTION_KEY:?generate with `openssl rand -hex 32`}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set a strong Keycloak admin password}
 
   clearinghouse-usage-worker:
     environment:
       CLEARINGHOUSE_REQUIRE_POSITIVE_BALANCE: "true"
+      CLEARINGHOUSE_DATABASE_URL: postgres://${SIGNER_POSTGRES_USER:-signer}:${SIGNER_POSTGRES_PASSWORD:?set a strong signer DB password}@postgres:5432/${SIGNER_POSTGRES_DB:-signer}
+      CLEARINGHOUSE_ADMIN_CLIENT_SECRET: ${CLEARINGHOUSE_ADMIN_CLIENT_SECRET:?set a strong admin client secret}

@@ -97,6 +97,19 @@ CLEARINGHOUSE_M2M_CLIENT_SECRET=...
 
 Seed on startup when `CLEARINGHOUSE_SEED_DASHBOARD_APP=true` logs the generated M2M secret once.
 
+## Production
+
+Use the prod overrides; compose refuses to start until every secret is set explicitly (no dev defaults):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+```
+
+Required: `KEYCLOAK_ADMIN_PASSWORD`, `KEYCLOAK_POSTGRES_PASSWORD`, `SIGNER_POSTGRES_PASSWORD`,
+`CLEARINGHOUSE_ADMIN_CLIENT_SECRET`, `CLEARINGHOUSE_CREDENTIAL_ENCRYPTION_KEY` (`openssl rand -hex 32`),
+`SIGNER_OIDC_CLIENT_SECRET`, `SIGNER_OIDC_CRYPTO_PASSPHRASE`. The DMZ validates the JWKS TLS chain
+(`SIGNER_OIDC_SSL_VALIDATE=On`), so use a real certificate — not the dev self-signed chain.
+
 ## Docs
 
 - [Device login SPI](docs/device-login-spi.md)
