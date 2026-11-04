@@ -32,6 +32,14 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Set up Java for the Keycloak extension
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - name: Compile Keycloak extension for Java analysis
+        run: mvn -B -f keycloak-spi/pom.xml -DskipTests compile dependency:copy-dependencies -DincludeScope=compile
       - name: Scan and enforce quality gate
         uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
         env:
